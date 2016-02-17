@@ -84,7 +84,7 @@
             android:layout_marginLeft="10dp"
             android:layout_marginRight="10dp"
             android:gravity="center_horizontal"
-            android:orientation="vertical" >
+            android:orientation="vertical">
         </LinearLayout>
 
         <Button

@@ -1,19 +1,14 @@
-apply plugin: 'com.android.application'
+apply plugin: 'com.android.library'
 
 android {
     compileSdkVersion 23
-    buildToolsVersion "23.0.1"
-
-    dexOptions {
-        jumboMode = true
-    }
+    buildToolsVersion "23.0.2"
 
     defaultConfig {
-        applicationId "com.leocardz.link.preview"
         minSdkVersion 15
         targetSdkVersion 23
         versionCode 1
-        versionName "1.1"
+        versionName "1.0"
     }
     buildTypes {
         release {
@@ -25,12 +20,8 @@ android {
 
 dependencies {
     compile fileTree(dir: 'libs', include: ['*.jar'])
+    testCompile 'junit:junit:4.12'
     compile 'com.android.support:appcompat-v7:23.1.1'
-    compile 'com.koushikdutta.urlimageviewhelper:urlimageviewhelper:1.0.4'
     compile 'org.jsoup:jsoup:1.8.3'
-    compile 'com.github.bumptech.glide:glide:3.7.0'
-    compile 'com.android.support:support-v4:+'
-
-    compile project (':weblinkpreview2')
-    //compile 'com.leocardz:link-preview:1.2.1@aar'
+    compile 'com.squareup.picasso:picasso:2.5.2'
 }

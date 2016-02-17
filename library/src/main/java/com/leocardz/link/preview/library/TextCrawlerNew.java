@@ -13,11 +13,10 @@ import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLConnection;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 
-public class TextCrawler {
+public class TextCrawlerNew {
 
 	public static final int ALL = -1;
 	public static final int NONE = -2;
@@ -27,7 +26,7 @@ public class TextCrawler {
 
 	private LinkPreviewCallback callback;
 
-	public TextCrawler() {
+	public TextCrawlerNew() {
 	}
 
 	public void makePreview(LinkPreviewCallback callback, String url) {
@@ -73,15 +72,11 @@ public class TextCrawler {
 			// Don't forget the http:// or https://
 			urls = SearchUrls.matches(params[0]);
 
-			if (urls.size() > 0) {
-				try {
-					sourceContent.setFinalUrl(urls.get(0));//unshortenUrl(extendedTrim()));
-				} catch (Exception e) {
-					System.out.print(e);
-				}
-			} else {
+			if (urls.size() > 0)
+				sourceContent
+						.setFinalUrl(unshortenUrl(extendedTrim(urls.get(0))));
+			else
 				sourceContent.setFinalUrl("");
-			}
 
 			if (!sourceContent.getFinalUrl().equals("")) {
 				if (isImage(sourceContent.getFinalUrl())
@@ -96,15 +91,18 @@ public class TextCrawler {
 				} else {
 					try {
 
+						String result = parsePageHeaderInfo(urls.get(0));
+						System.out.print(result);
+//						String userAgent = System.getProperty("http.agent");
+//						userAgent = TextUtils.isEmpty(userAgent) ? "Mozilla" : userAgent;
 						Document doc = Jsoup
 								.connect(sourceContent.getFinalUrl())
-								.userAgent("Mozilla")
-								.get();
+								.userAgent("Mozilla").get();
 
 						sourceContent.setHtmlCode(extendedTrim(doc.toString()));
 
-						HashMap<String, String> metaTags = getMetaTags(sourceContent
-								.getHtmlCode());
+						HashMap<String, String> metaTags = sourceContent.getMetaTags();
+//								getMetaTags(sourceContent.getHtmlCode());
 
 						sourceContent.setMetaTags(metaTags);
 
@@ -130,21 +128,13 @@ public class TextCrawler {
 								.getDescription().replaceAll(
 										Regex.SCRIPT_PATTERN, ""));
 
-						String imageInBody = null;
-
-						List<String> images = getImages(doc, imageQuantity);
-						for (String image : images) {
-							if (image.contains("logo")) {
-								imageInBody = image;
+						if (imageQuantity != NONE) {
+							if (!metaTags.get("image").equals("")) {
+								sourceContent.getImages().add(metaTags.get("image"));
+							} else {
+								sourceContent.setImages(getImages(doc, imageQuantity));
 							}
 						}
-
-						String imageUrl = parsePageHeaderInfo(doc);
-
-						if (!TextUtils.isEmpty(imageUrl)) {
-							sourceContent.setImages(Arrays.asList(imageUrl));
-						}
-
 
 						sourceContent.setSuccess(true);
 					} catch (Exception e) {
@@ -171,6 +161,41 @@ public class TextCrawler {
 				!isImage(sourceContent.getFinalUrl());
 		}
 
+	}
+
+	public static String parsePageHeaderInfo(String urlStr) throws Exception {
+		Document doc = Jsoup.connect(urlStr).userAgent("Mozilla").get();
+		Elements elements = doc.head().select("link[href~=.*\\.(ico|png)]");
+		Element bigIcon = null;
+		int size = 0;
+		for (Element element : elements) {
+			String sizes = element.attr("sizes");
+			if (!TextUtils.isEmpty(sizes)) {
+				if (bigIcon == null) {
+					bigIcon = element;
+					size = getIntSize(sizes);
+				} else {
+					int currentSize = getIntSize(sizes);
+					if (currentSize > size) {
+						size = currentSize;
+						bigIcon = element;
+					}
+				}
+			}
+		}
+		if (bigIcon != null) {
+			return bigIcon.attr("href");
+		} else {
+			return elements.last().attr("href");
+		}
+	}
+
+	private static int getIntSize(String sizes) {
+		int index = sizes.indexOf('x');
+		if (index == -1) {
+			return 0;
+		}
+		return Integer.valueOf(sizes.substring(0, index));
 	}
 
 	/** Gets content from a html tag */
@@ -374,54 +399,6 @@ public class TextCrawler {
 	public static String extendedTrim(String content) {
 		return content.replaceAll("\\s+", " ").replace("\n", " ")
 				.replace("\r", " ").trim();
-	}
-
-	private static String parsePageHeaderInfo(Document doc) throws Exception {
-		Elements bodyElements = doc.body().select("img[id~=\"icon\"");
-		String imageUrl = bodyElements.attr("src");
-		if (!TextUtils.isEmpty(imageUrl)) {
-			return imageUrl;
-		}
-
-		Elements elements = doc.head().select("link[href~=.*\\.(ico|png)]");
-		if (elements.isEmpty()) {
-			elements = doc.head().select("link[rel~=.*\\.(ico|png)]");
-		}
-		Element bigIcon = null;
-		int size = 0;
-		for (Element element : elements) {
-			String sizes = element.attr("sizes");
-			if (!TextUtils.isEmpty(sizes)) {
-				if (bigIcon == null) {
-					bigIcon = element;
-					size = getIntSize(sizes);
-				} else {
-					int currentSize = getIntSize(sizes);
-					if (currentSize > size) {
-						size = currentSize;
-						bigIcon = element;
-					}
-				}
-			}
-		}
-		if (bigIcon != null) {
-			return bigIcon.attr("href");
-		} else {
-			return elements.last().attr("href");
-		}
-	}
-
-	private static String parsePageHeaderInfo(String urlStr) throws Exception {
-		Document doc = Jsoup.connect(urlStr).userAgent("Mozilla").get();
-		return parsePageHeaderInfo(doc);
-	}
-
-	private static int getIntSize(String sizes) {
-		int index = sizes.indexOf('x');
-		if (index == -1) {
-			return 0;
-		}
-		return Integer.valueOf(sizes.substring(0, index));
 	}
 
 }

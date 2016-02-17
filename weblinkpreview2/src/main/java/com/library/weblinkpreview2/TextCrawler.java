@@ -1,7 +1,11 @@
-package com.leocardz.link.preview.library;
+package com.library.weblinkpreview2;
 
 import android.os.AsyncTask;
 import android.text.TextUtils;
+import android.util.Log;
+
+import com.library.weblinkpreview2.linkPreviewContainerImpl.StringUtils;
+import com.library.weblinkpreview2.pojo.LinkPreviewPojo;
 
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
@@ -9,21 +13,13 @@ import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
 
 import java.io.IOException;
-import java.net.MalformedURLException;
-import java.net.URL;
-import java.net.URLConnection;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 
 public class TextCrawler {
-
-	public static final int ALL = -1;
-	public static final int NONE = -2;
-
-	private final String HTTP_PROTOCOL = "http://";
-	private final String HTTPS_PROTOCOL = "https://";
 
 	private LinkPreviewCallback callback;
 
@@ -32,25 +28,14 @@ public class TextCrawler {
 
 	public void makePreview(LinkPreviewCallback callback, String url) {
 		this.callback = callback;
-		new GetCode(ALL).execute(url);
-	}
-
-	public void makePreview(LinkPreviewCallback callback, String url,
-							int imageQuantity) {
-		this.callback = callback;
-		new GetCode(imageQuantity).execute(url);
+		new GetCode().execute(url);
 	}
 
 	/** Get html code */
 	public class GetCode extends AsyncTask<String, Void, Void> {
 
 		private SourceContent sourceContent = new SourceContent();
-		private int imageQuantity;
 		private ArrayList<String> urls;
-
-		public GetCode(int imageQuantity) {
-			this.imageQuantity = imageQuantity;
-		}
 
 		@Override
 		protected void onPreExecute() {
@@ -88,8 +73,6 @@ public class TextCrawler {
 						&& !sourceContent.getFinalUrl().contains("dropbox")) {
 					sourceContent.setSuccess(true);
 
-					sourceContent.getImages().add(sourceContent.getFinalUrl());
-
 					sourceContent.setTitle("");
 					sourceContent.setDescription("");
 
@@ -105,8 +88,6 @@ public class TextCrawler {
 
 						HashMap<String, String> metaTags = getMetaTags(sourceContent
 								.getHtmlCode());
-
-						sourceContent.setMetaTags(metaTags);
 
 						sourceContent.setTitle(metaTags.get("title"));
 						sourceContent.setDescription(metaTags
@@ -130,21 +111,11 @@ public class TextCrawler {
 								.getDescription().replaceAll(
 										Regex.SCRIPT_PATTERN, ""));
 
-						String imageInBody = null;
-
-						List<String> images = getImages(doc, imageQuantity);
-						for (String image : images) {
-							if (image.contains("logo")) {
-								imageInBody = image;
-							}
-						}
-
 						String imageUrl = parsePageHeaderInfo(doc);
 
 						if (!TextUtils.isEmpty(imageUrl)) {
-							sourceContent.setImages(Arrays.asList(imageUrl));
+							sourceContent.setImage(imageUrl);
 						}
-
 
 						sourceContent.setSuccess(true);
 					} catch (Exception e) {
@@ -156,8 +127,6 @@ public class TextCrawler {
 			String[] finalLinkSet = sourceContent.getFinalUrl().split("&");
 			sourceContent.setUrl(finalLinkSet[0]);
 
-			sourceContent.setCannonicalUrl(cannonicalPage(sourceContent
-					.getFinalUrl()));
 			sourceContent.setDescription(stripTags(sourceContent
 					.getDescription()));
 
@@ -173,8 +142,44 @@ public class TextCrawler {
 
 	}
 
+	public static void fillSourceContent(LinkPreviewPojo pojo, String url) {
+		try {
+			Document doc = Jsoup
+                    .connect(url)
+					.timeout(3000)
+                    .userAgent("Mozilla")
+                    .get();
+
+			Element header = getHeader(doc);
+			String imageLink = parseOGImage(header);
+
+			pojo.setTitle("empty");
+			pojo.setDescription("description");
+
+			if (TextUtils.isEmpty(imageLink)) {
+				return;
+			}
+
+			if (StringUtils.isLinkPartialAndNeedMainUrl(imageLink)) {
+				try {
+					String baseUrl = new URI(url).getHost();
+					imageLink = StringUtils.fixIfLinkPartial(imageLink, baseUrl);
+				} catch (URISyntaxException e) {
+					imageLink = null;
+				}
+			} else {
+				imageLink = StringUtils.fixIfLinkPartial(imageLink, null);
+			}
+			pojo.setTitle(imageLink);
+			pojo.setImageUrl(imageLink);
+		} catch (IOException e) {
+			Log.e("TextCrawler", "url=" + url, e);
+			pojo.setTitle(null);
+		}
+	}
+
 	/** Gets content from a html tag */
-	private String getTagContent(String tag, String content) {
+	private static String getTagContent(String tag, String content) {
 
 		String pattern = "<" + tag + "(.*?)>(.*?)</" + tag + ">";
 		String result = "", currentMatch = "";
@@ -200,31 +205,13 @@ public class TextCrawler {
 		return htmlDecode(result);
 	}
 
-	/** Gets images from the html code */
-	public List<String> getImages(Document document, int imageQuantity) {
-		List<String> matches = new ArrayList<String>();
-
-		Elements media = document.select("[src]");
-
-		for (Element srcElement : media) {
-			if (srcElement.tagName().equals("img")) {
-				matches.add(srcElement.attr("abs:src"));
-			}
-		}
-
-		if (imageQuantity != ALL)
-			matches = matches.subList(0, imageQuantity);
-
-		return matches;
-	}
-
 	/** Transforms from html to normal string */
-	private String htmlDecode(String content) {
+	private static String htmlDecode(String content) {
 		return Jsoup.parse(content).text();
 	}
 
 	/** Crawls the code looking for relevant information */
-	private String crawlCode(String content) {
+	private static String crawlCode(String content) {
 		String result = "";
 		String resultSpan = "";
 		String resultParagraph = "";
@@ -248,30 +235,8 @@ public class TextCrawler {
 		return htmlDecode(result);
 	}
 
-	/** Returns the cannoncial url */
-	private String cannonicalPage(String url) {
-
-		String cannonical = "";
-		if (url.startsWith(HTTP_PROTOCOL)) {
-			url = url.substring(HTTP_PROTOCOL.length());
-		} else if (url.startsWith(HTTPS_PROTOCOL)) {
-			url = url.substring(HTTPS_PROTOCOL.length());
-		}
-
-		int urlLength = url.length();
-		for (int i = 0; i < urlLength; i++) {
-			if (url.charAt(i) != '/')
-				cannonical += url.charAt(i);
-			else
-				break;
-		}
-
-		return cannonical;
-
-	}
-
 	/** Strips the tags from an element */
-	private String stripTags(String content) {
+	private static String stripTags(String content) {
 		return Jsoup.parse(content).text();
 	}
 
@@ -283,7 +248,7 @@ public class TextCrawler {
 	/**
 	 * Returns meta tags from html code
 	 */
-	private HashMap<String, String> getMetaTags(String content) {
+	private static HashMap<String, String> getMetaTags(String content) {
 
 		HashMap<String, String> metaTags = new HashMap<String, String>();
 		metaTags.put("url", "");
@@ -323,51 +288,10 @@ public class TextCrawler {
 	}
 
 	/** Gets content from metatag */
-	private String separeMetaTagsContent(String content) {
+	private static String separeMetaTagsContent(String content) {
 		String result = Regex.pregMatch(content, Regex.METATAG_CONTENT_PATTERN,
 				1);
 		return htmlDecode(result);
-	}
-
-	/**
-	 * Unshortens a short url
-	 */
-	private String unshortenUrl(String shortURL) {
-		if (!shortURL.startsWith(HTTP_PROTOCOL)
-				&& !shortURL.startsWith(HTTPS_PROTOCOL))
-			return "";
-
-		URLConnection urlConn = connectURL(shortURL);
-		urlConn.getHeaderFields();
-
-		String finalResult = urlConn.getURL().toString();
-
-		urlConn = connectURL(finalResult);
-		urlConn.getHeaderFields();
-
-		shortURL = urlConn.getURL().toString();
-
-		while (!shortURL.equals(finalResult)) {
-			finalResult = unshortenUrl(finalResult);
-		}
-
-		return finalResult;
-	}
-
-	/**
-	 * Takes a valid url and return a URL object representing the url address.
-	 */
-	private URLConnection connectURL(String strURL) {
-		URLConnection conn = null;
-		try {
-			URL inputURL = new URL(strURL);
-			conn = inputURL.openConnection();
-		} catch (MalformedURLException e) {
-			System.out.println("Please input a valid URL");
-		} catch (IOException ioe) {
-			System.out.println("Can not connect to the URL");
-		}
-		return conn;
 	}
 
 	/** Removes extra spaces and trim the string */
@@ -376,13 +300,27 @@ public class TextCrawler {
 				.replace("\r", " ").trim();
 	}
 
-	private static String parsePageHeaderInfo(Document doc) throws Exception {
-		Elements bodyElements = doc.body().select("img[id~=\"icon\"");
-		String imageUrl = bodyElements.attr("src");
-		if (!TextUtils.isEmpty(imageUrl)) {
-			return imageUrl;
-		}
+	private static Element getHeader(Document doc) {
+		return doc.head();
+	}
 
+	private static String parseOGImage(Element header) {
+		Elements elements = header.select("meta[property~=og:image]");
+		if (elements == null || elements.size() == 0) {
+			return null;
+		}
+		return elements.last().attr("content");
+	}
+
+	private static String parseOGBaseUrl(Element header) {
+		Elements elements = header.select("meta[property~=og:url");
+		if (elements == null || elements.size() == 0) {
+			return null;
+		}
+		return elements.last().attr("content");
+	}
+
+	private static String parsePageHeaderInfo(Document doc) {
 		Elements elements = doc.head().select("link[href~=.*\\.(ico|png)]");
 		if (elements.isEmpty()) {
 			elements = doc.head().select("link[rel~=.*\\.(ico|png)]");
